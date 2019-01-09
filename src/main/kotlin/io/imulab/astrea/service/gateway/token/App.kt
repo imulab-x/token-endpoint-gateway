@@ -10,6 +10,8 @@ import io.imulab.astrea.sdk.commons.doNotCall
 import io.imulab.astrea.sdk.discovery.RemoteDiscoveryService
 import io.imulab.astrea.sdk.discovery.SampleDiscovery
 import io.imulab.astrea.sdk.event.ClientEvents
+import io.imulab.astrea.sdk.flow.hybrid.RemoteHybridFlowTokenLegService
+import io.imulab.astrea.sdk.flow.refresh.RemoteRefreshFlowService
 import io.imulab.astrea.sdk.oauth.OAuthContext
 import io.imulab.astrea.sdk.oauth.client.ClientLookup
 import io.imulab.astrea.sdk.oauth.client.OAuthClient
@@ -30,6 +32,8 @@ import io.imulab.astrea.sdk.oidc.spi.HttpResponse
 import io.imulab.astrea.sdk.oidc.spi.SimpleHttpClient
 import io.imulab.astrea.service.gateway.token.dispatch.AuthorizeCodeFlowTokenLeg
 import io.imulab.astrea.service.gateway.token.dispatch.ClientCredentialsFlow
+import io.imulab.astrea.service.gateway.token.dispatch.HybridFlowTokenLeg
+import io.imulab.astrea.service.gateway.token.dispatch.RefreshFlow
 import io.vertx.core.Vertx
 import io.vertx.core.json.JsonObject
 import io.vertx.ext.healthchecks.HealthCheckHandler
@@ -70,6 +74,8 @@ open class App(private val vertx: Vertx, private val config: Config) {
             importOnce(client)
             importOnce(authorizeCodeFlow)
             importOnce(clientCredentialsFlow)
+            importOnce(hybridFlow)
+            importOnce(refreshFlow)
             importOnce(app)
 
             bind<GatewayVerticle>() with singleton {
@@ -79,7 +85,9 @@ open class App(private val vertx: Vertx, private val config: Config) {
                     requestProducer = instance(),
                     dispatchers = listOf(
                         instance<AuthorizeCodeFlowTokenLeg>(),
-                        instance<ClientCredentialsFlow>()
+                        instance<ClientCredentialsFlow>(),
+                        instance<HybridFlowTokenLeg>(),
+                        instance<RefreshFlow>()
                     )
                 )
             }
@@ -127,6 +135,33 @@ open class App(private val vertx: Vertx, private val config: Config) {
                     config.getString("clientCredentialsFlow.host"),
                     config.getInt("clientCredentialsFlow.port")
                 ).enableRetry().maxRetryAttempts(10).usePlaintext().build()
+            )
+        }
+    }
+
+    val hybridFlow = Kodein.Module("hybridFlow") {
+        bind<HybridFlowTokenLeg>() with singleton {
+            HybridFlowTokenLeg(
+                service = RemoteHybridFlowTokenLegService(
+                    ManagedChannelBuilder.forAddress(
+                        config.getString("hybridFlow.host"),
+                        config.getInt("hybridFlow.port")
+                    ).enableRetry().maxRetryAttempts(10).usePlaintext().build()
+                ),
+                hybridFlowPrefix = config.getString("hybridFlow.serviceId")
+            )
+        }
+    }
+
+    val refreshFlow = Kodein.Module("refreshFlow") {
+        bind<RefreshFlow>() with singleton {
+            RefreshFlow(
+                RemoteRefreshFlowService(
+                    ManagedChannelBuilder.forAddress(
+                        config.getString("refreshFlow.host"),
+                        config.getInt("refreshFlow.port")
+                    ).enableRetry().maxRetryAttempts(10).usePlaintext().build()
+                )
             )
         }
     }
